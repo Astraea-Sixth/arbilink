@@ -48,11 +48,13 @@ npx tsx scripts/price.ts --tokenIn 0x... --tokenOut 0x... --fee 3000 --amount 10
 ### Swap tokens (testnet)
 
 ```bash
-npx tsx scripts/swap.ts --amount 0.001                # Swap ETH -> USDC (with risk check)
-npx tsx scripts/swap.ts --amount 0.01 --dry-run       # Estimate only
-npx tsx scripts/swap.ts --amount 0.001 --slippage 2   # 2% slippage tolerance
-npx tsx scripts/swap.ts --amount 5 --force --confirm-large  # Override safety checks
+npx tsx scripts/swap.ts --amount 0.001 --testnet          # Swap ETH -> USDC on Sepolia
+npx tsx scripts/swap.ts --amount 0.01 --dry-run            # Estimate only
+npx tsx scripts/swap.ts --amount 0.001 --slippage 2 --testnet  # 2% slippage tolerance
+npx tsx scripts/swap.ts --amount 5 --force --confirm-large --testnet  # Override safety checks
 ```
+
+> `--testnet` sets `amountOutMinimum = 0` for low-liquidity Sepolia pools. Omit on mainnet for full slippage protection.
 
 ### Register agent (ERC-8004)
 
@@ -88,8 +90,13 @@ arbilink/
 - **Read-only scripts** (balance, price) use public RPC endpoints with no private key
 - **Write scripts** (swap, register) load private key from `.env` (gitignored)
 - All scripts use **ethers v6** and parse CLI args from `process.argv` (no external deps)
-- Price quotes come from **Arbitrum One** (mainnet) where real liquidity exists
-- Swaps execute on **Arbitrum Sepolia** (testnet) for safe experimentation
+- Swaps support both **Arbitrum One** (mainnet, `--network one`) and **Arbitrum Sepolia** (testnet, default)
+- SwapRouter v1 (with deadline) on mainnet, SwapRouter02 (no deadline) on Sepolia — handled automatically
+
+## Verified Transactions
+
+- **Registration** (Arbitrum Sepolia): [`0xacca222f...`](https://sepolia.arbiscan.io/tx/0xacca222f9748479b7e05fb1491f542b1ffe20d12805f3f6cc5be09e4bf08e17e)
+- **Swap** (Arbitrum One mainnet): [`0xc971bcc6...`](https://arbiscan.io/tx/0xc971bcc6cf32117e83d756939088bd4d93c89a1fd16c716d706122c8e2a2b02a)
 
 ## Tech
 

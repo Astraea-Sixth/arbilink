@@ -59,18 +59,20 @@ npx tsx scripts/price.ts --tokenIn 0x... --tokenOut 0x... --network sepolia
 ### 3. Execute swap (testnet only)
 
 ```bash
-# Swap 0.001 ETH for USDC on Arbitrum Sepolia (includes risk scorecard)
-npx tsx scripts/swap.ts --amount 0.001
+# Swap on Arbitrum Sepolia (--testnet bypasses slippage for low-liquidity testnet pools)
+npx tsx scripts/swap.ts --amount 0.001 --testnet
 
 # Dry run (estimate only, no transaction)
 npx tsx scripts/swap.ts --amount 0.01 --dry-run
 
 # Custom tokens and slippage
-npx tsx scripts/swap.ts --amount 0.001 --tokenIn WETH --tokenOut USDC --slippage 2
+npx tsx scripts/swap.ts --amount 0.001 --tokenIn WETH --tokenOut USDC --slippage 2 --testnet
 
 # Override risk check and amount cap
-npx tsx scripts/swap.ts --amount 5 --force --confirm-large --max-amount 10
+npx tsx scripts/swap.ts --amount 5 --force --confirm-large --max-amount 10 --testnet
 ```
+
+> **Note:** `--testnet` sets `amountOutMinimum = 0` since Sepolia pools have near-zero liquidity. On mainnet, omit `--testnet` for full slippage protection.
 
 ### 4. Register agent identity (ERC-8004)
 
@@ -98,10 +100,15 @@ All swaps and registrations are logged to `logs/transactions.jsonl` (JSONL forma
 
 ## Network Configuration
 
-| Network          | Usage                        | RPC                                        |
-|------------------|------------------------------|---------------------------------------------|
-| Arbitrum One     | Price lookups (mainnet liquidity) | https://arb1.arbitrum.io/rpc           |
-| Arbitrum Sepolia | Swaps, registration, balances    | https://sepolia-rollup.arbitrum.io/rpc |
+| Network          | Usage                              | RPC                                        |
+|------------------|-------------------------------------|---------------------------------------------|
+| Arbitrum One     | Swaps, price lookups (mainnet)     | https://arb1.arbitrum.io/rpc                |
+| Arbitrum Sepolia | Swaps, registration, testing       | https://sepolia-rollup.arbitrum.io/rpc      |
+
+## Verified Transactions
+
+- **Registration** (Arbitrum Sepolia): [`0xacca222f...`](https://sepolia.arbiscan.io/tx/0xacca222f9748479b7e05fb1491f542b1ffe20d12805f3f6cc5be09e4bf08e17e)
+- **Swap** (Arbitrum One mainnet): [`0xc971bcc6...`](https://arbiscan.io/tx/0xc971bcc6cf32117e83d756939088bd4d93c89a1fd16c716d706122c8e2a2b02a)
 
 ## Security
 

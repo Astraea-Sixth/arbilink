@@ -28,7 +28,7 @@ A self-contained skill that enables an OpenClaw agent to:
 ## Target Platform
 - Arbitrum Sepolia (testnet for submission)
 - Arbitrum One (mainnet-ready, same code)
-- macOS Apple Silicon (Mac mini, node v25)
+- macOS Apple Silicon, Node.js v25+
 
 ## Tech Stack
 - Node.js / TypeScript

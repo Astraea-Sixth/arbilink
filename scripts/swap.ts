@@ -16,26 +16,59 @@ function logTransaction(entry: Record<string, unknown>): void {
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
-const RPC_URL = "https://sepolia-rollup.arbitrum.io/rpc";
 const PRIVATE_KEY = process.env.PRIVATE_KEY || "";
-
-const TOKENS: Record<string, { address: string; decimals: number }> = {
-  WETH: { address: "0x980B62Da83eFf3D4576C647993b0c1D7faf17c73", decimals: 18 },
-  USDC: { address: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d", decimals: 6 },
-};
-
-const SWAP_ROUTER = "0x101F443B4d1b059569D643917553c771E1b9663E";
 const FEE_TIER = 500;
 
-// SwapRouter02 does not include deadline in the struct — deadline is handled
-// via multicall or checked externally. We keep the ABI as-is.
-const SWAP_ROUTER_ABI = [
+interface NetworkConfig {
+  name: string;
+  rpc: string;
+  router: string;
+  routerAbi: string[];
+  quoter: string;
+  tokens: Record<string, { address: string; decimals: number }>;
+  explorer: string;
+  hasDeadline: boolean;
+}
+
+// SwapRouter v1 (Arbitrum One) — struct includes `deadline`
+const SWAP_ROUTER_V1_ABI = [
+  "function exactInputSingle(tuple(address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96)) payable returns (uint256 amountOut)",
+];
+
+// SwapRouter02 (Arbitrum Sepolia) — struct does NOT include `deadline`
+const SWAP_ROUTER_V2_ABI = [
   "function exactInputSingle(tuple(address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountOutMinimum, uint256 amountIn, uint160 sqrtPriceLimitX96)) payable returns (uint256 amountOut)",
 ];
 
-// Quoter on mainnet — used for estimating output before swap
-const QUOTER_V2 = "0x61fFE014bA17989E743c5F6cB21bF9697530B21e";
-const QUOTER_V2_RPC = "https://arb1.arbitrum.io/rpc";
+const NETWORKS: Record<string, NetworkConfig> = {
+  sepolia: {
+    name: "Arbitrum Sepolia",
+    rpc: "https://sepolia-rollup.arbitrum.io/rpc",
+    router: "0x101F443B4d1b059569D643917553c771E1b9663E",
+    routerAbi: SWAP_ROUTER_V2_ABI,
+    quoter: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+    tokens: {
+      WETH: { address: "0x980B62Da83eFf3D4576C647993b0c1D7faf17c73", decimals: 18 },
+      USDC: { address: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d", decimals: 6 },
+    },
+    explorer: "https://sepolia.arbiscan.io",
+    hasDeadline: false,
+  },
+  one: {
+    name: "Arbitrum One",
+    rpc: "https://arb1.arbitrum.io/rpc",
+    router: "0xE592427A0AEce92De3Edee1F18E0157C05861564",
+    routerAbi: SWAP_ROUTER_V1_ABI,
+    quoter: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+    tokens: {
+      WETH: { address: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", decimals: 18 },
+      USDC: { address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", decimals: 6 },
+    },
+    explorer: "https://arbiscan.io",
+    hasDeadline: true,
+  },
+};
+
 const QUOTER_V2_ABI = [
   "function quoteExactInputSingle(tuple(address tokenIn, address tokenOut, uint256 amountIn, uint24 fee, uint160 sqrtPriceLimitX96)) returns (uint256 amountOut, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate)",
 ];
@@ -54,7 +87,7 @@ const SAFE_ADDRESSES = new Set([
   "0xaf88d065e77c8cc2239327c5edb3a432268e5831", // USDC One
 ]);
 
-// Mainnet equivalents for known Sepolia tokens (for mainnet price quote)
+// Sepolia → Mainnet address mapping (for cross-network price quotes)
 const SEPOLIA_TO_MAINNET: Record<string, string> = {
   "0x980b62da83eff3d4576c647993b0c1d7faf17c73": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", // WETH
   "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", // USDC
@@ -72,7 +105,7 @@ interface TokenInfo {
   symbol: string;
 }
 
-async function resolveToken(input: string, provider: ethers.JsonRpcProvider): Promise<TokenInfo> {
+async function resolveToken(input: string, provider: ethers.JsonRpcProvider, networkTokens: Record<string, { address: string; decimals: number }>): Promise<TokenInfo> {
   // Raw address
   if (input.startsWith("0x")) {
     if (!ethers.isAddress(input)) {
@@ -92,11 +125,11 @@ async function resolveToken(input: string, provider: ethers.JsonRpcProvider): Pr
     }
   }
 
-  // Symbol lookup
+  // Symbol lookup from network-specific tokens
   const upper = input.toUpperCase();
-  const info = TOKENS[upper];
+  const info = networkTokens[upper];
   if (!info) {
-    console.error(`Unknown token symbol: ${input}. Use a 0x address or one of: ${Object.keys(TOKENS).join(", ")}`);
+    console.error(`Unknown token symbol: ${input}. Use a 0x address or one of: ${Object.keys(networkTokens).join(", ")}`);
     process.exit(1);
   }
   return { address: info.address, decimals: info.decimals, symbol: upper };
@@ -113,6 +146,9 @@ interface SwapArgs {
   force: boolean;
   maxAmount: number;
   confirmLarge: boolean;
+  testnet: boolean;
+  fee: number;
+  network: string;
 }
 
 function parseArgs(): SwapArgs {
@@ -125,6 +161,9 @@ function parseArgs(): SwapArgs {
   let force = false;
   let maxAmount = 1.0;
   let confirmLarge = false;
+  let testnet = false;
+  let fee = FEE_TIER;
+  let network = "sepolia";
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -144,15 +183,21 @@ function parseArgs(): SwapArgs {
       maxAmount = parseFloat(args[++i]!);
     } else if (arg === "--confirm-large") {
       confirmLarge = true;
+    } else if (arg === "--testnet") {
+      testnet = true;
+    } else if (arg === "--fee" && args[i + 1]) {
+      fee = parseInt(args[++i]!, 10);
+    } else if (arg === "--network" && args[i + 1]) {
+      network = args[++i]!;
     }
   }
 
   if (!amount) {
-    console.error("Usage: npx tsx scripts/swap.ts --amount 0.001 [--tokenIn WETH] [--tokenOut USDC] [--slippage 1] [--dry-run] [--force] [--max-amount 1.0] [--confirm-large]");
+    console.error("Usage: npx tsx scripts/swap.ts --amount 0.001 [--network sepolia|one] [--tokenIn WETH] [--tokenOut USDC] [--fee 500] [--slippage 1] [--dry-run] [--force] [--max-amount 1.0] [--confirm-large] [--testnet]");
     process.exit(1);
   }
 
-  return { amount, tokenIn, tokenOut, slippage, dryRun, force, maxAmount, confirmLarge };
+  return { amount, tokenIn, tokenOut, slippage, dryRun, force, maxAmount, confirmLarge, testnet, fee, network };
 }
 
 // ── Risk scorecard ──────────────────────────────────────────────────────────
@@ -303,7 +348,13 @@ function printRiskScorecard(result: RiskResult, tokenSymbol: string): void {
 // ── Main ────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  const { amount, tokenIn, tokenOut, slippage, dryRun, force, maxAmount, confirmLarge } = parseArgs();
+  const { amount, tokenIn, tokenOut, slippage, dryRun, force, maxAmount, confirmLarge, testnet, fee, network } = parseArgs();
+
+  const net = NETWORKS[network];
+  if (!net) {
+    console.error(`Unknown network: ${network}. Use "sepolia" or "one".`);
+    process.exit(1);
+  }
 
   if (isNaN(Number(amount)) || Number(amount) <= 0) {
     console.error(`Invalid amount: ${amount}. Must be a positive number.`);
@@ -311,9 +362,9 @@ async function main(): Promise<void> {
   }
 
   // Resolve tokens — supports both symbols (WETH) and raw addresses (0x...)
-  const sepoliaProvider = new ethers.JsonRpcProvider(RPC_URL);
-  const tokenInInfo = await resolveToken(tokenIn, sepoliaProvider);
-  const tokenOutInfo = await resolveToken(tokenOut, sepoliaProvider);
+  const networkProvider = new ethers.JsonRpcProvider(net.rpc);
+  const tokenInInfo = await resolveToken(tokenIn, networkProvider, net.tokens);
+  const tokenOutInfo = await resolveToken(tokenOut, networkProvider, net.tokens);
 
   const amountIn = ethers.parseUnits(amount, tokenInInfo.decimals);
 
@@ -353,7 +404,7 @@ async function main(): Promise<void> {
         gasEth: null,
         txHash: null,
         status: "blocked-risk",
-        network: "arbitrum-sepolia",
+        network: network === "one" ? "arbitrum-one" : "arbitrum-sepolia",
         riskScore: riskResult.score,
       });
       process.exit(1);
@@ -363,31 +414,52 @@ async function main(): Promise<void> {
     }
   }
 
-  // Get a price estimate from mainnet quoter (Sepolia may lack liquidity for quoting)
-  const mainnetInAddr = SEPOLIA_TO_MAINNET[tokenInInfo.address.toLowerCase()];
-  const mainnetOutAddr = SEPOLIA_TO_MAINNET[tokenOutInfo.address.toLowerCase()];
+  // Get a price estimate via QuoterV2
   let estimatedOut = 0n;
 
-  if (mainnetInAddr && mainnetOutAddr) {
+  if (network === "one") {
+    // On mainnet: quote directly using the same network's quoter
     try {
-      const mainnetProvider = new ethers.JsonRpcProvider(QUOTER_V2_RPC);
-      const quoter = new ethers.Contract(QUOTER_V2, QUOTER_V2_ABI, mainnetProvider);
+      const quoter = new ethers.Contract(net.quoter, QUOTER_V2_ABI, networkProvider);
       const result = await quoter.quoteExactInputSingle.staticCall({
-        tokenIn: mainnetInAddr,
-        tokenOut: mainnetOutAddr,
+        tokenIn: tokenInInfo.address,
+        tokenOut: tokenOutInfo.address,
         amountIn,
-        fee: FEE_TIER,
+        fee,
         sqrtPriceLimitX96: 0n,
       });
       estimatedOut = result[0] as bigint;
       console.log(
-        `Estimated output (mainnet price): ${ethers.formatUnits(estimatedOut, tokenOutInfo.decimals)} ${tokenOutInfo.symbol}`
+        `Estimated output: ${ethers.formatUnits(estimatedOut, tokenOutInfo.decimals)} ${tokenOutInfo.symbol}`
       );
     } catch {
-      console.warn("Could not get mainnet quote for estimation. Proceeding without minimum output protection.");
+      console.warn("Could not get price quote. Proceeding without minimum output protection.");
     }
   } else {
-    console.warn("No mainnet equivalent found for this token pair. Skipping price estimation.");
+    // On Sepolia: cross-reference to mainnet quoter for price estimate
+    const mainnetInAddr = SEPOLIA_TO_MAINNET[tokenInInfo.address.toLowerCase()];
+    const mainnetOutAddr = SEPOLIA_TO_MAINNET[tokenOutInfo.address.toLowerCase()];
+    if (mainnetInAddr && mainnetOutAddr) {
+      try {
+        const mainnetProvider = new ethers.JsonRpcProvider(NETWORKS.one.rpc);
+        const quoter = new ethers.Contract(NETWORKS.one.quoter, QUOTER_V2_ABI, mainnetProvider);
+        const result = await quoter.quoteExactInputSingle.staticCall({
+          tokenIn: mainnetInAddr,
+          tokenOut: mainnetOutAddr,
+          amountIn,
+          fee,
+          sqrtPriceLimitX96: 0n,
+        });
+        estimatedOut = result[0] as bigint;
+        console.log(
+          `Estimated output (mainnet price): ${ethers.formatUnits(estimatedOut, tokenOutInfo.decimals)} ${tokenOutInfo.symbol}`
+        );
+      } catch {
+        console.warn("Could not get mainnet quote for estimation. Proceeding without minimum output protection.");
+      }
+    } else {
+      console.warn("No mainnet equivalent found for this token pair. Skipping price estimation.");
+    }
   }
 
   // Calculate amountOutMinimum with slippage
@@ -396,17 +468,49 @@ async function main(): Promise<void> {
     ? estimatedOut - (estimatedOut * slippageBps) / 10000n
     : 0n;
 
+  if (amountOutMinimum === 0n && !force && !testnet) {
+    console.error(
+      "🔴 WARNING: No price quote available — amountOutMinimum set to 0. Vulnerable to sandwich attacks.\n" +
+      "   Use --force to proceed anyway, or --testnet for testnet execution."
+    );
+    logTransaction({
+      type: "swap",
+      tokenIn: tokenInInfo.symbol,
+      tokenOut: tokenOutInfo.symbol,
+      tokenInAddress: tokenInInfo.address,
+      tokenOutAddress: tokenOutInfo.address,
+      amountIn: amount,
+      amountOut: null,
+      gasEth: null,
+      txHash: null,
+      status: "blocked-no-quote",
+      network: network === "one" ? "arbitrum-one" : "arbitrum-sepolia",
+      riskScore: riskResult?.score ?? null,
+    });
+    process.exit(1);
+  }
+  if (amountOutMinimum === 0n && force) {
+    console.warn("🔴 WARNING: No price quote — amountOutMinimum is 0. Proceeding because --force was set.");
+  }
+
+  // Testnet mode: override slippage protection for low-liquidity testnet pools
+  const finalAmountOutMinimum = testnet ? 0n : amountOutMinimum;
+  if (testnet) {
+    console.warn("⚠️  TESTNET MODE: amountOutMinimum set to 0 — no slippage protection");
+  }
+
   if (dryRun) {
     console.log("\n--- DRY RUN ---");
     console.log(`Swap: ${amount} ${tokenInInfo.symbol} -> ${tokenOutInfo.symbol}`);
-    console.log(`Network: Arbitrum Sepolia`);
-    console.log(`Router: ${SWAP_ROUTER}`);
+    console.log(`Network: ${net.name}`);
+    console.log(`Router: ${net.router}`);
     console.log(`Token in: ${tokenInInfo.address} (${tokenInInfo.symbol})`);
     console.log(`Token out: ${tokenOutInfo.address} (${tokenOutInfo.symbol})`);
     console.log(`Amount in: ${ethers.formatUnits(amountIn, tokenInInfo.decimals)} ${tokenInInfo.symbol}`);
-    console.log(`Min output: ${ethers.formatUnits(amountOutMinimum, tokenOutInfo.decimals)} ${tokenOutInfo.symbol}`);
+    console.log(`Min output: ${ethers.formatUnits(finalAmountOutMinimum, tokenOutInfo.decimals)} ${tokenOutInfo.symbol}`);
     console.log(`Slippage: ${slippage}%`);
-    console.log(`Fee tier: ${(FEE_TIER / 10000).toFixed(2)}%`);
+    console.log(`Fee tier: ${(fee / 10000).toFixed(2)}%`);
+    if (testnet) console.log(`Mode: TESTNET (no slippage protection)`);
     if (riskResult) console.log(`Risk score: ${riskResult.score}/10`);
     return;
   }
@@ -416,35 +520,64 @@ async function main(): Promise<void> {
     console.error("PRIVATE_KEY not set. Add it to .env or export it as an environment variable.");
     process.exit(1);
   }
-  const provider = new ethers.JsonRpcProvider(RPC_URL);
+  const provider = new ethers.JsonRpcProvider(net.rpc);
   const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
-  const router = new ethers.Contract(SWAP_ROUTER, SWAP_ROUTER_ABI, wallet);
+  const router = new ethers.Contract(net.router, net.routerAbi, wallet);
 
   const isETHIn = WETH_ADDRESSES.has(tokenInInfo.address.toLowerCase());
 
   // 4. Balance check
+  const ethBalance = await provider.getBalance(wallet.address);
+  const estimatedGasEth = ethers.parseUnits("0.0003", 18); // ~300k gas at 0.1 gwei
+
   if (isETHIn) {
-    const balance = await provider.getBalance(wallet.address);
-    // Rough gas estimate: 300k gas at 0.1 gwei
-    const estimatedGas = ethers.parseUnits("0.0003", 18);
-    const needed = amountIn + estimatedGas;
-    if (balance < needed) {
+    const needed = amountIn + estimatedGasEth;
+    if (ethBalance < needed) {
       console.error(
-        `Insufficient balance. Need ${ethers.formatEther(needed)} ETH (${ethers.formatEther(amountIn)} swap + ${ethers.formatEther(estimatedGas)} gas), you have ${ethers.formatEther(balance)} ETH`
+        `Insufficient balance. Need ${ethers.formatEther(needed)} ETH (${ethers.formatEther(amountIn)} swap + ${ethers.formatEther(estimatedGasEth)} gas), you have ${ethers.formatEther(ethBalance)} ETH`
+      );
+      process.exit(1);
+    }
+  } else {
+    // ERC20 input — check token balance + ETH for gas
+    if (ethBalance < estimatedGasEth) {
+      console.error(
+        `Insufficient ETH for gas. Need ~${ethers.formatEther(estimatedGasEth)} ETH, you have ${ethers.formatEther(ethBalance)} ETH`
+      );
+      process.exit(1);
+    }
+    const tokenContract = new ethers.Contract(tokenInInfo.address, ERC20_ABI, provider);
+    const tokenBalance = await tokenContract.balanceOf(wallet.address) as bigint;
+    if (tokenBalance < amountIn) {
+      console.error(
+        `Insufficient ${tokenInInfo.symbol} balance. Need ${ethers.formatUnits(amountIn, tokenInInfo.decimals)}, you have ${ethers.formatUnits(tokenBalance, tokenInInfo.decimals)}`
       );
       process.exit(1);
     }
   }
 
-  const swapParams = {
-    tokenIn: tokenInInfo.address,
-    tokenOut: tokenOutInfo.address,
-    fee: FEE_TIER,
-    recipient: wallet.address,
-    amountOutMinimum,
-    amountIn,
-    sqrtPriceLimitX96: 0n,
-  };
+  const deadline = Math.floor(Date.now() / 1000) + 300;
+
+  const swapParams = net.hasDeadline
+    ? {
+        tokenIn: tokenInInfo.address,
+        tokenOut: tokenOutInfo.address,
+        fee,
+        recipient: wallet.address,
+        deadline,
+        amountIn,
+        amountOutMinimum: finalAmountOutMinimum,
+        sqrtPriceLimitX96: 0n,
+      }
+    : {
+        tokenIn: tokenInInfo.address,
+        tokenOut: tokenOutInfo.address,
+        fee,
+        recipient: wallet.address,
+        amountOutMinimum: finalAmountOutMinimum,
+        amountIn,
+        sqrtPriceLimitX96: 0n,
+      };
 
   // 5. Gas estimation
   try {
@@ -463,20 +596,12 @@ async function main(): Promise<void> {
     console.warn("Gas estimation failed:", err instanceof Error ? err.message : err);
   }
 
-  // 6. Deadline check — verify we're within a reasonable time window
-  // SwapRouter02 does not include deadline in the struct, so we just verify
-  // we're executing promptly. If this script has been running > 5 min, abort.
-  const startTime = Math.floor(Date.now() / 1000);
-  const deadline = startTime + 300;
-
-  console.log(`\nSwapping ${amount} ${tokenInInfo.symbol} -> ${tokenOutInfo.symbol} on Arbitrum Sepolia...`);
+  console.log(`\nSwapping ${amount} ${tokenInInfo.symbol} -> ${tokenOutInfo.symbol} on ${net.name}...`);
+  if (net.hasDeadline) {
+    console.log(`Deadline: ${new Date(deadline * 1000).toISOString()} (5 min)`);
+  }
 
   try {
-    // Final deadline sanity check
-    if (Math.floor(Date.now() / 1000) > deadline) {
-      throw new Error("Transaction deadline exceeded (5 min). Please retry.");
-    }
-
     const tx = await router.exactInputSingle(swapParams, {
       value: isETHIn ? amountIn : 0n,
     });
@@ -486,10 +611,36 @@ async function main(): Promise<void> {
 
     const gasEth = ethers.formatEther(receipt.gasUsed * receipt.gasPrice);
 
+    // Decode actual amountOut from Swap event in receipt logs
+    // Uniswap V3 Pool emits: Swap(address sender, address recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)
+    const SWAP_EVENT_ABI = [
+      "event Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)",
+    ];
+    const swapIface = new ethers.Interface(SWAP_EVENT_ABI);
+    let actualAmountOut: string | null = null;
+
+    for (const log of receipt.logs) {
+      try {
+        const parsed = swapIface.parseLog({ topics: [...log.topics], data: log.data });
+        if (parsed && parsed.name === "Swap") {
+          const amount0 = parsed.args[2] as bigint;
+          const amount1 = parsed.args[3] as bigint;
+          // The output token will have a positive value (received), input will be negative (sent)
+          const rawOut = amount0 < 0n ? -amount0 : amount1 < 0n ? -amount1 : (amount0 > amount1 ? amount0 : amount1);
+          actualAmountOut = ethers.formatUnits(rawOut > 0n ? rawOut : -rawOut, tokenOutInfo.decimals);
+          break;
+        }
+      } catch {
+        // Not a matching log — continue
+      }
+    }
+
+    const displayOut = actualAmountOut ?? ethers.formatUnits(finalAmountOutMinimum, tokenOutInfo.decimals);
+
     console.log(`\n--- Swap Complete ---`);
     console.log(`Tx hash: ${receipt.hash}`);
     console.log(`Amount in: ${amount} ${tokenInInfo.symbol}`);
-    console.log(`Min output: ${ethers.formatUnits(amountOutMinimum, tokenOutInfo.decimals)} ${tokenOutInfo.symbol}`);
+    console.log(`Amount out: ${displayOut} ${tokenOutInfo.symbol}${actualAmountOut ? "" : " (min estimate)"}`);
     console.log(`Gas used: ${receipt.gasUsed.toString()} (${gasEth} ETH)`);
     console.log(`Block: ${receipt.blockNumber}`);
 
@@ -500,11 +651,12 @@ async function main(): Promise<void> {
       tokenInAddress: tokenInInfo.address,
       tokenOutAddress: tokenOutInfo.address,
       amountIn: amount,
-      amountOut: ethers.formatUnits(amountOutMinimum, tokenOutInfo.decimals),
+      amountOut: displayOut,
+      amountOutActual: actualAmountOut !== null,
       gasEth,
       txHash: receipt.hash,
       status: "success",
-      network: "arbitrum-sepolia",
+      network: network === "one" ? "arbitrum-one" : "arbitrum-sepolia",
       riskScore: riskResult?.score ?? null,
     });
   } catch (err: unknown) {
@@ -520,7 +672,7 @@ async function main(): Promise<void> {
       gasEth: null,
       txHash: null,
       status: "failed",
-      network: "arbitrum-sepolia",
+      network: network === "one" ? "arbitrum-one" : "arbitrum-sepolia",
       riskScore: riskResult?.score ?? null,
       error: errMsg.slice(0, 500),
     });
@@ -528,7 +680,7 @@ async function main(): Promise<void> {
     if (err instanceof Error) {
       console.error(`\nSwap failed: ${err.message}`);
       if (err.message.includes("insufficient funds")) {
-        console.error("Hint: Make sure you have enough ETH on Arbitrum Sepolia for gas + swap amount.");
+        console.error(`Hint: Make sure you have enough ETH on ${net.name} for gas + swap amount.`);
       }
     } else {
       console.error("Swap failed:", err);
