@@ -1,108 +1,201 @@
 # ArbiLink
 
-**Arbitrum agent superpowers** — an OpenClaw skill that gives AI agents the ability to interact with the Arbitrum blockchain.
+**AI agents manage on-chain assets — but they can't detect honeypots, rugged pools, or sandwich attacks.** ArbiLink is an [OpenClaw](https://github.com/openclaw/openclaw) skill that gives any AI agent a pre-swap risk scorecard, live Uniswap V3 prices, safe swap execution, and on-chain identity registration — all on Arbitrum.
 
 Built for the [Arbitrum Foundation Agentic Bounty](https://www.arbitrum.foundation/).
 
-## What it does
+---
 
-ArbiLink provides five core capabilities:
+## Install (OpenClaw)
 
-- **Balance** — Check ETH and ERC20 token balances on Arbitrum One or Sepolia
-- **Price** — Get live prices for any token pair by contract address from Uniswap V3
-- **Swap** — Execute token swaps with risk scorecard and security hardening (testnet)
-- **Register** — Register the agent's identity on an on-chain registry
-- **Dashboard** — Web UI showing transaction history with auto-refresh
+Send this to your OpenClaw agent:
 
-## Quick start
+> "Please follow the SKILL.md at https://raw.githubusercontent.com/Astraea-Sixth/arbilink/main/SKILL.md and set up ArbiLink on this machine."
+
+Your agent will clone the repo, install dependencies, and confirm when ready.
+
+### Manual install
 
 ```bash
+git clone https://github.com/Astraea-Sixth/arbilink && cd arbilink
 npm install
-cp .env.example .env
-# Edit .env and add your Arbitrum Sepolia private key
-
-# Check your agent wallet balance
-npx tsx scripts/balance.ts
-
-# Get the current ETH price
-npx tsx scripts/price.ts
+cp .env.example .env   # add your private key for swap/register
 ```
 
-## Commands
-
-### Check balance
-
-```bash
-npx tsx scripts/balance.ts                          # Agent wallet ETH on Sepolia
-npx tsx scripts/balance.ts 0x1234... --network one  # Any address on Arbitrum One
-npx tsx scripts/balance.ts --token 0x75fa...        # ERC20 token balance
-```
-
-### Get token price
-
-```bash
-npx tsx scripts/price.ts --tokenIn 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1 --tokenOut 0xaf88d065e77c8cC2239327C5EDb3A432268e5831
-npx tsx scripts/price.ts --tokenIn 0x... --tokenOut 0x... --fee 3000 --amount 10 --network sepolia
-```
-
-### Swap tokens (testnet)
-
-```bash
-npx tsx scripts/swap.ts --amount 0.001 --testnet          # Swap ETH -> USDC on Sepolia
-npx tsx scripts/swap.ts --amount 0.01 --dry-run            # Estimate only
-npx tsx scripts/swap.ts --amount 0.001 --slippage 2 --testnet  # 2% slippage tolerance
-npx tsx scripts/swap.ts --amount 5 --force --confirm-large --testnet  # Override safety checks
-```
-
-> `--testnet` sets `amountOutMinimum = 0` for low-liquidity Sepolia pools. Omit on mainnet for full slippage protection.
-
-### Register agent (ERC-8004)
-
-```bash
-npx tsx scripts/register.ts                                              # Default profile
-npx tsx scripts/register.ts --name "My Agent" --description "AI agent"   # Custom
-npx tsx scripts/register.ts --check                                      # Check status (no key needed)
-```
-
-### Transaction dashboard
-
-```bash
-npx tsx scripts/dashboard.ts               # http://localhost:3099
-```
+---
 
 ## Architecture
 
 ```
-arbilink/
-├── SKILL.md              # OpenClaw skill definition
-├── scripts/
-│   ├── balance.ts        # Read-only: wallet balance queries
-│   ├── price.ts          # Read-only: any token pair price by address
-│   ├── swap.ts           # Write: testnet swaps + risk scorecard
-│   ├── register.ts       # Write: on-chain agent registration
-│   └── dashboard.ts      # Web UI: transaction history
-├── logs/
-│   └── transactions.jsonl  # Auto-generated transaction log
-└── references/
-    └── contracts.md      # All contract addresses and ABIs
+┌─────────────────┐
+│  OpenClaw Agent  │
+└────────┬────────┘
+         │  natural language → script execution
+         ▼
+┌─────────────────┐
+│  ArbiLink Skill  │
+│                  │
+│  balance.ts ─────┼──▶  Arbitrum RPC (ETH/ERC20 balances)
+│  price.ts ───────┼──▶  Uniswap V3 QuoterV2 (live prices)
+│  swap.ts ────────┼──▶  Uniswap V3 SwapRouter (execution)
+│      │           │      ├─▶ GoPlus Security API (honeypot/tax detection)
+│      │           │      └─▶ DEXScreener API (liquidity analysis)
+│  register.ts ────┼──▶  Arbitrum Identity Registry (ERC-8004)
+│  dashboard.ts ───┼──▶  localhost:3099 (transaction history UI)
+└─────────────────┘
 ```
 
-- **Read-only scripts** (balance, price) use public RPC endpoints with no private key
-- **Write scripts** (swap, register) load private key from `.env` (gitignored)
-- All scripts use **ethers v6** and parse CLI args from `process.argv` (no external deps)
-- Swaps support both **Arbitrum One** (mainnet, `--network one`) and **Arbitrum Sepolia** (testnet, default)
-- SwapRouter v1 (with deadline) on mainnet, SwapRouter02 (no deadline) on Sepolia — handled automatically
+---
 
-## Verified Transactions
+## Real Output
 
-- **Registration** (Arbitrum Sepolia): [`0xacca222f...`](https://sepolia.arbiscan.io/tx/0xacca222f9748479b7e05fb1491f542b1ffe20d12805f3f6cc5be09e4bf08e17e)
-- **Swap** (Arbitrum One mainnet): [`0xc971bcc6...`](https://arbiscan.io/tx/0xc971bcc6cf32117e83d756939088bd4d93c89a1fd16c716d706122c8e2a2b02a)
+### Check balance
+
+```
+$ npx tsx scripts/balance.ts --network one
+Address: 0xa6b18B26717bBd10A3Ae828052C8CA35Ef5EcB8b | Network: Arbitrum One | ETH: 0.00149
+```
+
+### Live price (any token pair)
+
+```
+$ npx tsx scripts/price.ts --tokenIn 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1 \
+    --tokenOut 0xaf88d065e77c8cC2239327C5EDb3A432268e5831
+WETH/USDC on Arbitrum One
+  Pool: 0xC6962004f452bE9203591991D15f6b388e09E8D0
+  Fee tier: 0.05%
+  Price: 1 WETH = 2,041.97 USDC
+```
+
+### Safe swap (dry run)
+
+```
+$ npx tsx scripts/swap.ts --amount 0.001 --network one --dry-run
+Estimated output: 2.041987 USDC
+
+--- DRY RUN ---
+Swap: 0.001 WETH -> USDC
+Network: Arbitrum One
+Amount in: 0.001 WETH
+Min output: 2.021568 USDC
+Slippage: 1%
+Fee tier: 0.05%
+```
+
+### Honeypot blocked by risk scorecard
+
+```
+$ npx tsx scripts/swap.ts --amount 0.1 --tokenOut 0xDEAD...SCAM --network one --dry-run
+
+--- Risk Scorecard: SCAM ---
+Score: 2/10 🔴 DANGER
+
+Passed:
+  ✅ Listed on DEX
+
+Warnings:
+  ⚠️  HONEYPOT — cannot sell after buying
+  ⚠️  Sell tax: 99.0%
+  ⚠️  Contract is not open source
+  ⚠️  LP not locked
+  ⚠️  Creator holds 45.2%
+  ⚠️  Low holder count: 47
+  ⚠️  Low DEX liquidity: $8,400
+
+Risk score too low (2/10). Use --force to override.
+```
+
+### Agent registration (ERC-8004)
+
+```
+$ npx tsx scripts/register.ts --name "Astraea" --description "OpenClaw AI agent"
+Registering agent on Arbitrum Sepolia...
+Tx submitted: 0xacca222f9748479b7e05fb1491f542b1ffe20d12805f3f6cc5be09e4bf08e17e
+
+--- Registration Complete ---
+Tx hash: 0xacca222f...
+Gas used: 338830
+Block: 255910945
+Agent ID (token): 50
+```
+
+---
+
+## On-Chain Proof
+
+| Action | TX Hash | Network | Link |
+|---|---|---|---|
+| Agent Registration | `0xacca222f...e17e` | Arbitrum Sepolia | [View on Arbiscan](https://sepolia.arbiscan.io/tx/0xacca222f9748479b7e05fb1491f542b1ffe20d12805f3f6cc5be09e4bf08e17e) |
+| WETH → USDC Swap | `0xc971bcc6...b02a` | Arbitrum One | [View on Arbiscan](https://arbiscan.io/tx/0xc971bcc6cf32117e83d756939088bd4d93c89a1fd16c716d706122c8e2a2b02a) |
+
+---
+
+## Scripts
+
+| Script | Purpose | Network | Requires Key |
+|---|---|---|---|
+| `balance.ts` | ETH / ERC20 balance check | Both | No |
+| `price.ts` | Live Uniswap V3 price for any token pair | Both | No |
+| `swap.ts` | Token swap with risk scorecard + security checks | Both | Yes |
+| `register.ts` | On-chain agent identity (ERC-8004) | Sepolia | Yes |
+| `dashboard.ts` | Transaction history web UI (localhost:3099) | N/A | No |
+
+### Key flags (swap.ts)
+
+| Flag | Purpose |
+|---|---|
+| `--network one\|sepolia` | Target network (default: sepolia) |
+| `--fee 500\|3000\|10000` | Uniswap fee tier |
+| `--slippage N` | Max slippage % (default: 1, cap: 50) |
+| `--dry-run` | Estimate only, no execution |
+| `--testnet` | Zero slippage protection (for broken testnet pools) |
+| `--force` | Override risk scorecard blocks |
+| `--max-amount N` | Max swap size in token units (default: 1) |
+| `--confirm-large` | Override max amount cap |
+
+---
+
+## Config
+
+All addresses, RPCs, and contract references live in [`config/networks.json`](config/networks.json) — zero hardcoded values in scripts.
+
+```
+config/
+  networks.json      # Addresses, RPCs, tokens for each network
+  loadConfig.ts      # Typed config loader
+```
+
+## Security
+
+- Private key loaded from `.env` (gitignored) — never in the repo
+- Pre-swap risk scorecard via GoPlus + DEXScreener (blocks score < 5 unless `--force`)
+- Slippage enforcement with BigInt math (`amountOutMinimum = quote * (1 - slippage/100)`)
+- Balance + gas pre-check with clear error messages
+- Gas estimation before signing (warns if gas > 10% of swap value)
+- Recipient locked to sender wallet
+- Max swap cap with explicit override required
+- SwapRouter v1 deadline (5 min) on mainnet
 
 ## Tech
 
 - TypeScript (strict mode)
 - ethers v6
-- Uniswap V3 (Factory, QuoterV2, SwapRouter02)
-- Express (dashboard server)
-- GoPlus + DEXScreener (token risk analysis)
-- Arbitrum One + Sepolia RPCs
+- Uniswap V3 (Factory, QuoterV2, SwapRouter v1 + v2)
+- agent0-sdk (ERC-8004 identity registration)
+- Express (dashboard)
+- GoPlus + DEXScreener (risk analysis)
+- Arbitrum One + Sepolia
+
+---
+
+## What's Next
+
+- **Multi-hop swaps** — ARB → USDC → WETH via optimal routing
+- **Limit orders** — set a target price, agent monitors and executes
+- **Portfolio tracking** — aggregate balances across watched wallets
+- **Telegram alerts** — notify when a watched token's risk score changes
+- **Mainnet registry** — register on Arbitrum One once identity contracts deploy
+
+---
+
+MIT License · Built with [OpenClaw](https://github.com/openclaw/openclaw)
