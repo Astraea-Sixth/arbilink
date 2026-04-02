@@ -1,0 +1,22 @@
+{
+  "name": "arbilink",
+  "version": "1.0.0",
+  "description": "OpenClaw skill — Arbitrum agent superpowers",
+  "type": "module",
+  "scripts": {
+    "balance": "npx tsx scripts/balance.ts",
+    "price": "npx tsx scripts/price.ts",
+    "swap": "npx tsx scripts/swap.ts",
+    "register": "npx tsx scripts/register.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.0",
+    "ethers": "^6.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}
