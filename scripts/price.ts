@@ -1,5 +1,5 @@
 import { ethers } from "ethers";
-import { getNetwork } from "../config/loadConfig.js";
+import { getNetwork, getAllTokens } from "../config/loadConfig.js";
 
 // ── Config ────────────────────────────────────────────────────────────────
 
@@ -26,6 +26,7 @@ interface PriceArgs {
   fee: number | null;
   amount: string;
   network: string;
+  tokens: string | null;
 }
 
 function parseArgs(): PriceArgs {
@@ -35,6 +36,7 @@ function parseArgs(): PriceArgs {
   let fee: number | null = null;
   let amount = "1";
   let network = "one";
+  let tokens: string | null = null;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -48,24 +50,29 @@ function parseArgs(): PriceArgs {
       amount = args[++i]!;
     } else if (arg === "--network" && args[i + 1]) {
       network = args[++i]!;
+    } else if (arg === "--tokens" && args[i + 1]) {
+      tokens = args[++i]!;
     }
   }
 
-  if (!tokenIn || !tokenOut) {
+  if (!tokens && (!tokenIn || !tokenOut)) {
     console.error("Usage: npx tsx scripts/price.ts --tokenIn 0x... --tokenOut 0x... [--fee 500] [--amount 1] [--network one|sepolia]");
+    console.error("   or: npx tsx scripts/price.ts --tokens WETH,ARB,GMX [--network one|sepolia]");
     process.exit(1);
   }
 
-  if (!ethers.isAddress(tokenIn)) {
-    console.error(`Invalid tokenIn address: ${tokenIn}`);
-    process.exit(1);
-  }
-  if (!ethers.isAddress(tokenOut)) {
-    console.error(`Invalid tokenOut address: ${tokenOut}`);
-    process.exit(1);
+  if (!tokens) {
+    if (!ethers.isAddress(tokenIn)) {
+      console.error(`Invalid tokenIn address: ${tokenIn}`);
+      process.exit(1);
+    }
+    if (!ethers.isAddress(tokenOut)) {
+      console.error(`Invalid tokenOut address: ${tokenOut}`);
+      process.exit(1);
+    }
   }
 
-  return { tokenIn, tokenOut, fee, amount, network };
+  return { tokenIn, tokenOut, fee, amount, network, tokens };
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -100,8 +107,98 @@ function formatFee(fee: number): string {
 
 // ── Main ────────────────────────────────────────────────────────────────────
 
+async function multiTokenPrice(network: string, tokenList: string): Promise<void> {
+  const net = getNetwork(network);
+  const provider = new ethers.JsonRpcProvider(net.rpc);
+  const allTokens = getAllTokens(network);
+  const usdcAddress = net.tokens["USDC"]?.address;
+
+  if (!usdcAddress) {
+    console.error("USDC not configured for this network");
+    process.exit(1);
+  }
+
+  const factory = new ethers.Contract(net.factory, FACTORY_ABI, provider);
+  const quoter = new ethers.Contract(net.quoter, QUOTER_V2_ABI, provider);
+
+  const symbols = tokenList.split(",").map(s => s.trim().toUpperCase());
+
+  console.log(`\nToken Prices on ${net.name} (vs USDC)`);
+  console.log("━".repeat(50));
+
+  const colW = { token: 10, price: 20, fee: 12 };
+  console.log(
+    `  ${"Token".padEnd(colW.token)}${"Price (USD)".padStart(colW.price)}${"Fee".padStart(colW.fee)}`
+  );
+  console.log("  " + "─".repeat(colW.token + colW.price + colW.fee));
+
+  for (const sym of symbols) {
+    // Resolve token: by symbol or address
+    let tokenAddress: string;
+    let decimals: number;
+    let displaySymbol = sym;
+
+    if (sym.startsWith("0X") && ethers.isAddress(sym)) {
+      tokenAddress = sym;
+      const info = await fetchTokenInfo(tokenAddress, provider);
+      decimals = info.decimals;
+      displaySymbol = info.symbol;
+    } else {
+      const entry = allTokens[sym];
+      if (!entry) {
+        console.log(`  ${sym.padEnd(colW.token)}${"not found".padStart(colW.price)}${"".padStart(colW.fee)}`);
+        continue;
+      }
+      tokenAddress = entry.address;
+      decimals = entry.decimals;
+    }
+
+    // Stablecoin shortcut
+    if (tokenAddress.toLowerCase() === usdcAddress.toLowerCase()) {
+      console.log(
+        `  ${displaySymbol.padEnd(colW.token)}${"$1.0000".padStart(colW.price)}${"—".padStart(colW.fee)}`
+      );
+      continue;
+    }
+
+    // Auto-detect fee
+    const fee = await autoDetectFee(factory, tokenAddress, usdcAddress);
+
+    try {
+      const oneUnit = ethers.parseUnits("1", decimals);
+      const result = await quoter.quoteExactInputSingle.staticCall({
+        tokenIn: tokenAddress,
+        tokenOut: usdcAddress,
+        amountIn: oneUnit,
+        fee,
+        sqrtPriceLimitX96: 0n,
+      });
+      const price = parseFloat(ethers.formatUnits(result[0] as bigint, 6));
+      const priceStr = `$${price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+      const feeStr = formatFee(fee);
+
+      console.log(
+        `  ${displaySymbol.padEnd(colW.token)}${priceStr.padStart(colW.price)}${feeStr.padStart(colW.fee)}`
+      );
+    } catch {
+      console.log(
+        `  ${displaySymbol.padEnd(colW.token)}${"error".padStart(colW.price)}${"".padStart(colW.fee)}`
+      );
+    }
+  }
+
+  console.log("━".repeat(50));
+}
+
 async function main(): Promise<void> {
-  const { tokenIn, tokenOut, fee: feeArg, amount, network } = parseArgs();
+  const { tokenIn, tokenOut, fee: feeArg, amount, network, tokens } = parseArgs();
+
+  // Multi-token mode
+  if (tokens) {
+    await multiTokenPrice(network, tokens);
+    return;
+  }
+
   const net = getNetwork(network);
   const provider = new ethers.JsonRpcProvider(net.rpc);
 

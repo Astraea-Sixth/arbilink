@@ -582,12 +582,52 @@ async function main(): Promise<void> {
 
     const displayOut = actualAmountOut ?? ethers.formatUnits(finalAmountOutMinimum, tokenOutInfo.decimals);
 
-    console.log(`\n--- Swap Complete ---`);
-    console.log(`Tx hash: ${receipt.hash}`);
-    console.log(`Amount in: ${amount} ${tokenInInfo.symbol}`);
-    console.log(`Amount out: ${displayOut} ${tokenOutInfo.symbol}${actualAmountOut ? "" : " (min estimate)"}`);
-    console.log(`Gas used: ${receipt.gasUsed.toString()} (${gasEth} ETH)`);
-    console.log(`Block: ${receipt.blockNumber}`);
+    // Calculate slippage
+    let slippageDisplay = "N/A";
+    if (estimatedOut > 0n && actualAmountOut !== null) {
+      const estF = parseFloat(ethers.formatUnits(estimatedOut, tokenOutInfo.decimals));
+      const actF = parseFloat(actualAmountOut);
+      if (actF > estF) {
+        slippageDisplay = "better than expected";
+      } else {
+        const slippagePct = ((estF - actF) / estF) * 100;
+        slippageDisplay = slippagePct.toFixed(2) + "%";
+      }
+    }
+
+    // Calculate gas in USD
+    const gasCostWei = receipt.gasUsed * receipt.gasPrice;
+    const gasCostEthNum = parseFloat(ethers.formatEther(gasCostWei));
+    let gasUsdDisplay = `${gasCostEthNum.toFixed(6)} ETH`;
+    try {
+      const ethQuoter = new ethers.Contract(net.quoter, QUOTER_V2_ABI, networkProvider);
+      const ethPriceResult = await ethQuoter.quoteExactInputSingle.staticCall({
+        tokenIn: net.tokens["WETH"]!.address,
+        tokenOut: net.tokens["USDC"]!.address,
+        amountIn: ethers.parseUnits("1", 18),
+        fee: 500,
+        sqrtPriceLimitX96: 0n,
+      });
+      const ethPrice = parseFloat(ethers.formatUnits(ethPriceResult[0] as bigint, 6));
+      const gasCostUsd = gasCostEthNum * ethPrice;
+      gasUsdDisplay = `$${gasCostUsd.toFixed(4)}`;
+    } catch {
+      // keep ETH display
+    }
+
+    const txShort = receipt.hash.slice(0, 10) + "...";
+    const explorerUrl = `${net.explorer}/tx/${receipt.hash}`;
+
+    console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    console.log(` SWAP COMPLETE ✅`);
+    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    console.log(` Sent:      ${amount} ${tokenInInfo.symbol}`);
+    console.log(` Received:  ${displayOut} ${tokenOutInfo.symbol}${actualAmountOut ? "" : " (min estimate)"}`);
+    console.log(` Slippage:  ${slippageDisplay}`);
+    console.log(` Gas:       ${gasUsdDisplay} (${receipt.gasUsed.toLocaleString()} units)`);
+    console.log(` TX:        ${txShort}`);
+    console.log(` View:      ${explorerUrl}`);
+    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 
     logTransaction({
       type: "swap",

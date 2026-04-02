@@ -9,6 +9,10 @@
     "swap": "npx tsx scripts/swap.ts",
     "register": "npx tsx scripts/register.ts",
     "dashboard": "npx tsx scripts/dashboard.ts",
+    "portfolio": "npx tsx scripts/portfolio.ts",
+    "watch": "npx tsx scripts/watch.ts",
+    "history": "npx tsx scripts/history.ts",
+    "gas": "npx tsx scripts/gas.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

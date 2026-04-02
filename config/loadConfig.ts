@@ -10,6 +10,8 @@ interface TokenEntry {
   decimals: number;
 }
 
+export type { TokenEntry };
+
 export interface NetworkConfig {
   name: string;
   rpc: string;
@@ -20,6 +22,7 @@ export interface NetworkConfig {
   registry: string;
   explorer: string;
   tokens: Record<string, TokenEntry>;
+  commonTokens?: Record<string, TokenEntry>;
 }
 
 interface Config {
@@ -49,6 +52,12 @@ export function getNetwork(name: string): NetworkConfig {
 
 export function getDefaultWallet(): string {
   return loadConfig().defaultWallet;
+}
+
+/** Get all tokens for a network: core tokens + commonTokens merged */
+export function getAllTokens(networkName: string): Record<string, TokenEntry> {
+  const net = getNetwork(networkName);
+  return { ...net.tokens, ...(net.commonTokens ?? {}) };
 }
 
 /** Build set of all known safe token addresses (lowercase) across all networks */
