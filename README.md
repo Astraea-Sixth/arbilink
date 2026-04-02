@@ -169,6 +169,39 @@ Gas Report — Arbitrum One
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
+### Token risk scan
+
+```
+$ npx tsx scripts/scan.ts 0x912CE59144191C1204E64559FE8253a0e49E6548
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ TOKEN SCAN — ARB
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Name:         Arbitrum (ARB)
+ Address:      0x912CE59144191C1204E64559FE8253a0e49E6548
+ Network:      Arbitrum One
+ Total supply: 10,000,000,000
+ Price:        $0.091368
+ Liquidity:    $221,823
+ 24h volume:   $14,200,000
+
+ Risk Score:   9/10  ✅ SAFE
+
+ Passed:
+   ✅ Not a honeypot
+   ✅ Buy tax: 0.0%
+   ✅ Sell tax: 0.0%
+   ✅ Contract is verified / open source
+   ✅ Creator holds 0.0%
+   ✅ No other potential risks flagged
+   ✅ Holder count: 1,205,000
+   ✅ DEX liquidity: $221,823
+
+ Verdict:      ✅ SAFE — Token passes most security checks.
+ Explorer:     https://arbiscan.io/token/0x912CE...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
 ---
 
 ## On-Chain Proof
@@ -188,6 +221,7 @@ Gas Report — Arbitrum One
 | `portfolio.ts` | All token balances + USD values | Both | No |
 | `price.ts` | Live Uniswap V3 price (single pair or `--tokens` table) | Both | No |
 | `gas.ts` | Current gas price + swap cost estimate in USD | Both | No |
+| `scan.ts` | Standalone token risk scanner (GoPlus + DEXScreener) | Both | No |
 | `swap.ts` | Token swap with risk scorecard + security checks | Both | Yes |
 | `watch.ts` | Continuous token risk monitoring with alerts | Both | No |
 | `history.ts` | Transaction history from Arbiscan V2 API | Both | Arbiscan key |

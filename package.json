@@ -13,6 +13,7 @@
     "watch": "npx tsx scripts/watch.ts",
     "history": "npx tsx scripts/history.ts",
     "gas": "npx tsx scripts/gas.ts",
+    "scan": "npx tsx scripts/scan.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
