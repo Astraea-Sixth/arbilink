@@ -8,14 +8,17 @@
     "price": "npx tsx scripts/price.ts",
     "swap": "npx tsx scripts/swap.ts",
     "register": "npx tsx scripts/register.ts",
+    "dashboard": "npx tsx scripts/dashboard.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "agent0-sdk": "^1.7.1",
     "dotenv": "^17.4.0",
-    "ethers": "^6.13.0"
+    "ethers": "^6.13.0",
+    "express": "^5.1.0"
   },
   "devDependencies": {
+    "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.5.0"

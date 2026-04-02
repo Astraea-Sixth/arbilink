@@ -8,9 +8,10 @@ description: "Arbitrum blockchain operations — check wallet balances, get live
 ## When to use
 
 - User asks to check an Arbitrum wallet balance (ETH or ERC20)
-- User wants a live token price from Uniswap V3 on Arbitrum
-- User wants to execute a token swap on Arbitrum Sepolia (testnet)
+- User wants a live token price from Uniswap V3 on Arbitrum (any token pair by address)
+- User wants to execute a token swap on Arbitrum Sepolia (testnet) with risk analysis
 - User wants to register the agent identity on-chain
+- User wants to view transaction history via the dashboard
 
 ## When NOT to use
 
@@ -45,17 +46,20 @@ npx tsx scripts/balance.ts --token 0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d --
 ### 2. Get token price
 
 ```bash
-# Default: WETH/USDC price on Arbitrum One
-npx tsx scripts/price.ts
+# Any token pair by contract address (auto-detects fee tier)
+npx tsx scripts/price.ts --tokenIn 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1 --tokenOut 0xaf88d065e77c8cC2239327C5EDb3A432268e5831
 
-# Custom pair and fee tier
-npx tsx scripts/price.ts --pair WETH/USDC --fee 3000
+# With explicit fee tier and amount for price impact
+npx tsx scripts/price.ts --tokenIn 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1 --tokenOut 0xaf88d065e77c8cC2239327C5EDb3A432268e5831 --fee 500 --amount 10
+
+# On Arbitrum Sepolia
+npx tsx scripts/price.ts --tokenIn 0x... --tokenOut 0x... --network sepolia
 ```
 
 ### 3. Execute swap (testnet only)
 
 ```bash
-# Swap 0.001 ETH for USDC on Arbitrum Sepolia
+# Swap 0.001 ETH for USDC on Arbitrum Sepolia (includes risk scorecard)
 npx tsx scripts/swap.ts --amount 0.001
 
 # Dry run (estimate only, no transaction)
@@ -63,6 +67,9 @@ npx tsx scripts/swap.ts --amount 0.01 --dry-run
 
 # Custom tokens and slippage
 npx tsx scripts/swap.ts --amount 0.001 --tokenIn WETH --tokenOut USDC --slippage 2
+
+# Override risk check and amount cap
+npx tsx scripts/swap.ts --amount 5 --force --confirm-large --max-amount 10
 ```
 
 ### 4. Register agent identity (ERC-8004)
@@ -78,6 +85,17 @@ npx tsx scripts/register.ts --name "My Agent" --description "An AI agent on Arbi
 npx tsx scripts/register.ts --check
 ```
 
+### 5. Transaction dashboard
+
+```bash
+# Start the dashboard at http://localhost:3099
+npx tsx scripts/dashboard.ts
+```
+
+## Transaction Logging
+
+All swaps and registrations are logged to `logs/transactions.jsonl` (JSONL format, one entry per line). The dashboard reads this file for display.
+
 ## Network Configuration
 
 | Network          | Usage                        | RPC                                        |
@@ -89,6 +107,8 @@ npx tsx scripts/register.ts --check
 
 - Private key is loaded from `.env` (gitignored) — never committed to the repo
 - swap.ts and register.ts require `PRIVATE_KEY` in `.env` — they exit with an error if missing
+- swap.ts runs a GoPlus + DEXScreener risk scorecard before executing (blocks dangerous tokens unless --force)
+- swap.ts enforces max slippage (50%), amount caps, and balance checks
 - Use a **testnet-only** key — never fund it with real assets
 - balance.ts and price.ts are read-only and require no private key
 

@@ -4,6 +4,19 @@ import {
   IDENTITY_REGISTRY_ABI,
   encodeErc8004JsonDataUri,
 } from "agent0-sdk";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// ── Transaction logging ────────────────────────────────────────────────────
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const LOG_PATH = join(__dirname, "..", "logs", "transactions.jsonl");
+
+function logTransaction(entry: Record<string, unknown>): void {
+  mkdirSync(dirname(LOG_PATH), { recursive: true });
+  appendFileSync(LOG_PATH, JSON.stringify({ timestamp: new Date().toISOString(), ...entry }) + "\n");
+}
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -132,6 +145,16 @@ async function main(): Promise<void> {
     console.log(`Gas used: ${receipt.gasUsed.toString()}`);
     console.log(`Block: ${receipt.blockNumber}`);
 
+    logTransaction({
+      type: "register",
+      name,
+      agentURI,
+      txHash: receipt.hash,
+      gasEth: ethers.formatEther(receipt.gasUsed * receipt.gasPrice),
+      status: "success",
+      network: "arbitrum-sepolia",
+    });
+
     // Try to extract agentId from receipt logs
     for (const log of receipt.logs) {
       try {
@@ -147,6 +170,18 @@ async function main(): Promise<void> {
       }
     }
   } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    logTransaction({
+      type: "register",
+      name,
+      agentURI,
+      txHash: null,
+      gasEth: null,
+      status: "failed",
+      network: "arbitrum-sepolia",
+      error: errMsg.slice(0, 500),
+    });
+
     if (err instanceof Error) {
       console.error(`\nRegistration failed: ${err.message.slice(0, 300)}`);
       if (

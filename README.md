@@ -6,12 +6,13 @@ Built for the [Arbitrum Foundation Agentic Bounty](https://www.arbitrum.foundati
 
 ## What it does
 
-ArbiLink provides four core capabilities:
+ArbiLink provides five core capabilities:
 
 - **Balance** — Check ETH and ERC20 token balances on Arbitrum One or Sepolia
-- **Price** — Get live token prices from Uniswap V3 pools on Arbitrum One
-- **Swap** — Execute token swaps via Uniswap V3 on Arbitrum Sepolia (testnet)
+- **Price** — Get live prices for any token pair by contract address from Uniswap V3
+- **Swap** — Execute token swaps with risk scorecard and security hardening (testnet)
 - **Register** — Register the agent's identity on an on-chain registry
+- **Dashboard** — Web UI showing transaction history with auto-refresh
 
 ## Quick start
 
@@ -40,16 +41,17 @@ npx tsx scripts/balance.ts --token 0x75fa...        # ERC20 token balance
 ### Get token price
 
 ```bash
-npx tsx scripts/price.ts                   # WETH/USDC (default)
-npx tsx scripts/price.ts --pair WETH/USDC --fee 3000  # 0.3% fee tier
+npx tsx scripts/price.ts --tokenIn 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1 --tokenOut 0xaf88d065e77c8cC2239327C5EDb3A432268e5831
+npx tsx scripts/price.ts --tokenIn 0x... --tokenOut 0x... --fee 3000 --amount 10 --network sepolia
 ```
 
 ### Swap tokens (testnet)
 
 ```bash
-npx tsx scripts/swap.ts --amount 0.001                # Swap ETH -> USDC
+npx tsx scripts/swap.ts --amount 0.001                # Swap ETH -> USDC (with risk check)
 npx tsx scripts/swap.ts --amount 0.01 --dry-run       # Estimate only
 npx tsx scripts/swap.ts --amount 0.001 --slippage 2   # 2% slippage tolerance
+npx tsx scripts/swap.ts --amount 5 --force --confirm-large  # Override safety checks
 ```
 
 ### Register agent (ERC-8004)
@@ -60,6 +62,12 @@ npx tsx scripts/register.ts --name "My Agent" --description "AI agent"   # Custo
 npx tsx scripts/register.ts --check                                      # Check status (no key needed)
 ```
 
+### Transaction dashboard
+
+```bash
+npx tsx scripts/dashboard.ts               # http://localhost:3099
+```
+
 ## Architecture
 
 ```
@@ -67,9 +75,12 @@ arbilink/
 ├── SKILL.md              # OpenClaw skill definition
 ├── scripts/
 │   ├── balance.ts        # Read-only: wallet balance queries
-│   ├── price.ts          # Read-only: Uniswap V3 price oracle
-│   ├── swap.ts           # Write: testnet token swaps
-│   └── register.ts       # Write: on-chain agent registration
+│   ├── price.ts          # Read-only: any token pair price by address
+│   ├── swap.ts           # Write: testnet swaps + risk scorecard
+│   ├── register.ts       # Write: on-chain agent registration
+│   └── dashboard.ts      # Web UI: transaction history
+├── logs/
+│   └── transactions.jsonl  # Auto-generated transaction log
 └── references/
     └── contracts.md      # All contract addresses and ABIs
 ```
@@ -85,4 +96,6 @@ arbilink/
 - TypeScript (strict mode)
 - ethers v6
 - Uniswap V3 (Factory, QuoterV2, SwapRouter02)
+- Express (dashboard server)
+- GoPlus + DEXScreener (token risk analysis)
 - Arbitrum One + Sepolia RPCs
