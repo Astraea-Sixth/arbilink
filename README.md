@@ -36,10 +36,14 @@ cp .env.example .env   # add your private key for swap/register
 │  ArbiLink Skill  │
 │                  │
 │  balance.ts ─────┼──▶  Arbitrum RPC (ETH/ERC20 balances)
+│  portfolio.ts ───┼──▶  Arbitrum RPC + QuoterV2 (all balances + USD)
 │  price.ts ───────┼──▶  Uniswap V3 QuoterV2 (live prices)
 │  swap.ts ────────┼──▶  Uniswap V3 SwapRouter (execution)
 │      │           │      ├─▶ GoPlus Security API (honeypot/tax detection)
 │      │           │      └─▶ DEXScreener API (liquidity analysis)
+│  watch.ts ───────┼──▶  GoPlus API (continuous risk monitoring)
+│  gas.ts ─────────┼──▶  Arbitrum RPC (gas price + swap cost estimate)
+│  history.ts ─────┼──▶  Arbiscan V2 API (transaction history)
 │  register.ts ────┼──▶  Arbitrum Identity Registry (ERC-8004)
 │  dashboard.ts ───┼──▶  localhost:3099 (transaction history UI)
 └─────────────────┘
@@ -119,6 +123,52 @@ Block: 255910945
 Agent ID (token): 50
 ```
 
+### Portfolio overview
+
+```
+$ npx tsx scripts/portfolio.ts --network one
+
+Portfolio for 0xa6b1...cB8b on Arbitrum One
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Token              Balance         Price         Value
+  ──────────────────────────────────────────────────────
+  ETH               0.001494      $2,042.71        $3.05
+  USDC                  2.04         $1.00          $2.04
+  ──────────────────────────────────────────────────────
+  TOTAL                                            $5.09
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+### Multi-token price table
+
+```
+$ npx tsx scripts/price.ts --tokens WETH,ARB
+
+Token Prices on Arbitrum One (vs USDC)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Token              Price (USD)         Fee
+  ──────────────────────────────────────────
+  WETH               $2,042.8338       0.05%
+  ARB                    $0.0909       0.05%
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+### Gas price check
+
+```
+$ npx tsx scripts/gas.ts --network one
+
+Gas Report — Arbitrum One
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Gas price:    0.0200 gwei
+  Swap cost:    0.000003 ETH (est. 150000 gas)
+  ETH price:    $2,041.69
+  Swap cost:    $0.0061 USD
+
+  Recommendation: LOW — great time to swap
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
 ---
 
 ## On-Chain Proof
@@ -135,8 +185,12 @@ Agent ID (token): 50
 | Script | Purpose | Network | Requires Key |
 |---|---|---|---|
 | `balance.ts` | ETH / ERC20 balance check | Both | No |
-| `price.ts` | Live Uniswap V3 price for any token pair | Both | No |
+| `portfolio.ts` | All token balances + USD values | Both | No |
+| `price.ts` | Live Uniswap V3 price (single pair or `--tokens` table) | Both | No |
+| `gas.ts` | Current gas price + swap cost estimate in USD | Both | No |
 | `swap.ts` | Token swap with risk scorecard + security checks | Both | Yes |
+| `watch.ts` | Continuous token risk monitoring with alerts | Both | No |
+| `history.ts` | Transaction history from Arbiscan V2 API | Both | Arbiscan key |
 | `register.ts` | On-chain agent identity (ERC-8004) | Sepolia | Yes |
 | `dashboard.ts` | Transaction history web UI (localhost:3099) | N/A | No |
 
@@ -192,9 +246,8 @@ config/
 
 - **Multi-hop swaps** — ARB → USDC → WETH via optimal routing
 - **Limit orders** — set a target price, agent monitors and executes
-- **Portfolio tracking** — aggregate balances across watched wallets
-- **Telegram alerts** — notify when a watched token's risk score changes
-- **Mainnet registry** — register on Arbitrum One once identity contracts deploy
+- **Telegram alerts** — push notifications when a watched token's risk score drops
+- **Mainnet watch daemon** — persistent background process monitoring multiple tokens
 
 ---
 
