@@ -1,0 +1,33 @@
+{
+  "defaultWallet": "0xa6b18B26717bBd10A3Ae828052C8CA35Ef5EcB8b",
+  "networks": {
+    "sepolia": {
+      "name": "Arbitrum Sepolia",
+      "rpc": "https://sepolia-rollup.arbitrum.io/rpc",
+      "router": "0x101F443B4d1b059569D643917553c771E1b9663E",
+      "routerVersion": "v2",
+      "quoter": "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+      "factory": "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+      "registry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+      "explorer": "https://sepolia.arbiscan.io",
+      "tokens": {
+        "WETH": { "address": "0x980B62Da83eFf3D4576C647993b0c1D7faf17c73", "decimals": 18 },
+        "USDC": { "address": "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d", "decimals": 6 }
+      }
+    },
+    "one": {
+      "name": "Arbitrum One",
+      "rpc": "https://arb1.arbitrum.io/rpc",
+      "router": "0xE592427A0AEce92De3Edee1F18E0157C05861564",
+      "routerVersion": "v1",
+      "quoter": "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+      "factory": "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+      "registry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+      "explorer": "https://arbiscan.io",
+      "tokens": {
+        "WETH": { "address": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", "decimals": 18 },
+        "USDC": { "address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", "decimals": 6 }
+      }
+    }
+  }
+}

@@ -1,19 +1,7 @@
 import { ethers } from "ethers";
+import { getNetwork, getDefaultWallet } from "../config/loadConfig.js";
 
 // ── Config ──────────────────────────────────────────────────────────────────
-
-const NETWORKS = {
-  sepolia: {
-    name: "Arbitrum Sepolia",
-    rpc: "https://sepolia-rollup.arbitrum.io/rpc",
-  },
-  one: {
-    name: "Arbitrum One",
-    rpc: "https://arb1.arbitrum.io/rpc",
-  },
-} as const;
-
-const DEFAULT_ADDRESS = "0xa6b18B26717bBd10A3Ae828052C8CA35Ef5EcB8b";
 
 const ERC20_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
@@ -26,24 +14,19 @@ const ERC20_ABI = [
 function parseArgs(): {
   address: string;
   token: string | null;
-  network: keyof typeof NETWORKS;
+  network: string;
 } {
   const args = process.argv.slice(2);
-  let address = DEFAULT_ADDRESS;
+  let address = getDefaultWallet();
   let token: string | null = null;
-  let network: keyof typeof NETWORKS = "sepolia";
+  let network = "sepolia";
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--token" && args[i + 1]) {
       token = args[++i]!;
     } else if (arg === "--network" && args[i + 1]) {
-      const val = args[++i]!;
-      if (val !== "sepolia" && val !== "one") {
-        console.error(`Invalid network: ${val}. Use "sepolia" or "one".`);
-        process.exit(1);
-      }
-      network = val;
+      network = args[++i]!;
     } else if (!arg.startsWith("--")) {
       address = arg;
     }
@@ -67,7 +50,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const net = NETWORKS[network];
+  const net = getNetwork(network);
   const provider = new ethers.JsonRpcProvider(net.rpc);
 
   if (token) {

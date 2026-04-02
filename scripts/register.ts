@@ -7,6 +7,7 @@ import {
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getNetwork, getDefaultWallet } from "../config/loadConfig.js";
 
 // ── Transaction logging ────────────────────────────────────────────────────
 
@@ -20,11 +21,7 @@ function logTransaction(entry: Record<string, unknown>): void {
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
-const RPC_URL = "https://sepolia-rollup.arbitrum.io/rpc";
 const PRIVATE_KEY = process.env.PRIVATE_KEY || "";
-const REGISTRY_ADDRESS = "0x8004A818BFB912233c491871b3d84c89A494BD9e";
-
-const DEFAULT_WALLET = "0xa6b18B26717bBd10A3Ae828052C8CA35Ef5EcB8b";
 
 // ── Arg parsing ─────────────────────────────────────────────────────────────
 
@@ -59,7 +56,9 @@ function parseArgs(): RegisterArgs {
 
 async function main(): Promise<void> {
   const { name, description, check } = parseArgs();
-  const provider = new ethers.JsonRpcProvider(RPC_URL);
+  const net = getNetwork("sepolia");
+  const provider = new ethers.JsonRpcProvider(net.rpc);
+  const REGISTRY_ADDRESS = net.registry;
 
   // Check registration status (read-only — no private key needed)
   // The registry is ERC-721 based. We use ownerOf(tokenId) to probe,
@@ -67,7 +66,7 @@ async function main(): Promise<void> {
   if (check) {
     const address = PRIVATE_KEY
       ? new ethers.Wallet(PRIVATE_KEY).address
-      : DEFAULT_WALLET;
+      : getDefaultWallet();
     console.log(
       `Checking registration for ${address} on Arbitrum Sepolia...`
     );

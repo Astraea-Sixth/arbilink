@@ -3,6 +3,7 @@ import { ethers } from "ethers";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getNetwork, getSafeAddresses, getWethAddresses, getSepoliaToMainnetMap, type NetworkConfig } from "../config/loadConfig.js";
 
 // ── Transaction logging ────────────────────────────────────────────────────
 
@@ -19,17 +20,6 @@ function logTransaction(entry: Record<string, unknown>): void {
 const PRIVATE_KEY = process.env.PRIVATE_KEY || "";
 const FEE_TIER = 500;
 
-interface NetworkConfig {
-  name: string;
-  rpc: string;
-  router: string;
-  routerAbi: string[];
-  quoter: string;
-  tokens: Record<string, { address: string; decimals: number }>;
-  explorer: string;
-  hasDeadline: boolean;
-}
-
 // SwapRouter v1 (Arbitrum One) — struct includes `deadline`
 const SWAP_ROUTER_V1_ABI = [
   "function exactInputSingle(tuple(address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96)) payable returns (uint256 amountOut)",
@@ -39,35 +29,6 @@ const SWAP_ROUTER_V1_ABI = [
 const SWAP_ROUTER_V2_ABI = [
   "function exactInputSingle(tuple(address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountOutMinimum, uint256 amountIn, uint160 sqrtPriceLimitX96)) payable returns (uint256 amountOut)",
 ];
-
-const NETWORKS: Record<string, NetworkConfig> = {
-  sepolia: {
-    name: "Arbitrum Sepolia",
-    rpc: "https://sepolia-rollup.arbitrum.io/rpc",
-    router: "0x101F443B4d1b059569D643917553c771E1b9663E",
-    routerAbi: SWAP_ROUTER_V2_ABI,
-    quoter: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
-    tokens: {
-      WETH: { address: "0x980B62Da83eFf3D4576C647993b0c1D7faf17c73", decimals: 18 },
-      USDC: { address: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d", decimals: 6 },
-    },
-    explorer: "https://sepolia.arbiscan.io",
-    hasDeadline: false,
-  },
-  one: {
-    name: "Arbitrum One",
-    rpc: "https://arb1.arbitrum.io/rpc",
-    router: "0xE592427A0AEce92De3Edee1F18E0157C05861564",
-    routerAbi: SWAP_ROUTER_V1_ABI,
-    quoter: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
-    tokens: {
-      WETH: { address: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", decimals: 18 },
-      USDC: { address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", decimals: 6 },
-    },
-    explorer: "https://arbiscan.io",
-    hasDeadline: true,
-  },
-};
 
 const QUOTER_V2_ABI = [
   "function quoteExactInputSingle(tuple(address tokenIn, address tokenOut, uint256 amountIn, uint24 fee, uint160 sqrtPriceLimitX96)) returns (uint256 amountOut, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate)",
@@ -79,25 +40,9 @@ const ERC20_ABI = [
   "function symbol() view returns (string)",
 ];
 
-// Well-known safe addresses (skip risk check) — lowercase for comparison
-const SAFE_ADDRESSES = new Set([
-  "0x980b62da83eff3d4576c647993b0c1d7faf17c73", // WETH Sepolia
-  "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d", // USDC Sepolia
-  "0x82af49447d8a07e3bd95bd0d56f35241523fbab1", // WETH One
-  "0xaf88d065e77c8cc2239327c5edb3a432268e5831", // USDC One
-]);
-
-// Sepolia → Mainnet address mapping (for cross-network price quotes)
-const SEPOLIA_TO_MAINNET: Record<string, string> = {
-  "0x980b62da83eff3d4576c647993b0c1d7faf17c73": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", // WETH
-  "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", // USDC
-};
-
-// Known WETH addresses — lowercase
-const WETH_ADDRESSES = new Set([
-  "0x980b62da83eff3d4576c647993b0c1d7faf17c73", // Sepolia
-  "0x82af49447d8a07e3bd95bd0d56f35241523fbab1", // One
-]);
+// Derived from config — no hardcoded addresses
+const SAFE_ADDRESSES = getSafeAddresses();
+const WETH_ADDRESSES = getWethAddresses();
 
 interface TokenInfo {
   address: string;
@@ -350,11 +295,9 @@ function printRiskScorecard(result: RiskResult, tokenSymbol: string): void {
 async function main(): Promise<void> {
   const { amount, tokenIn, tokenOut, slippage, dryRun, force, maxAmount, confirmLarge, testnet, fee, network } = parseArgs();
 
-  const net = NETWORKS[network];
-  if (!net) {
-    console.error(`Unknown network: ${network}. Use "sepolia" or "one".`);
-    process.exit(1);
-  }
+  const net = getNetwork(network);
+  const hasDeadline = net.routerVersion === "v1";
+  const routerAbi = hasDeadline ? SWAP_ROUTER_V1_ABI : SWAP_ROUTER_V2_ABI;
 
   if (isNaN(Number(amount)) || Number(amount) <= 0) {
     console.error(`Invalid amount: ${amount}. Must be a positive number.`);
@@ -437,12 +380,14 @@ async function main(): Promise<void> {
     }
   } else {
     // On Sepolia: cross-reference to mainnet quoter for price estimate
-    const mainnetInAddr = SEPOLIA_TO_MAINNET[tokenInInfo.address.toLowerCase()];
-    const mainnetOutAddr = SEPOLIA_TO_MAINNET[tokenOutInfo.address.toLowerCase()];
+    const sepoliaToMainnet = getSepoliaToMainnetMap();
+    const mainnetInAddr = sepoliaToMainnet[tokenInInfo.address.toLowerCase()];
+    const mainnetOutAddr = sepoliaToMainnet[tokenOutInfo.address.toLowerCase()];
     if (mainnetInAddr && mainnetOutAddr) {
       try {
-        const mainnetProvider = new ethers.JsonRpcProvider(NETWORKS.one.rpc);
-        const quoter = new ethers.Contract(NETWORKS.one.quoter, QUOTER_V2_ABI, mainnetProvider);
+        const mainnetNet = getNetwork("one");
+        const mainnetProvider = new ethers.JsonRpcProvider(mainnetNet.rpc);
+        const quoter = new ethers.Contract(mainnetNet.quoter, QUOTER_V2_ABI, mainnetProvider);
         const result = await quoter.quoteExactInputSingle.staticCall({
           tokenIn: mainnetInAddr,
           tokenOut: mainnetOutAddr,
@@ -522,7 +467,7 @@ async function main(): Promise<void> {
   }
   const provider = new ethers.JsonRpcProvider(net.rpc);
   const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
-  const router = new ethers.Contract(net.router, net.routerAbi, wallet);
+  const router = new ethers.Contract(net.router, routerAbi, wallet);
 
   const isETHIn = WETH_ADDRESSES.has(tokenInInfo.address.toLowerCase());
 
@@ -558,7 +503,7 @@ async function main(): Promise<void> {
 
   const deadline = Math.floor(Date.now() / 1000) + 300;
 
-  const swapParams = net.hasDeadline
+  const swapParams = hasDeadline
     ? {
         tokenIn: tokenInInfo.address,
         tokenOut: tokenOutInfo.address,
@@ -597,7 +542,7 @@ async function main(): Promise<void> {
   }
 
   console.log(`\nSwapping ${amount} ${tokenInInfo.symbol} -> ${tokenOutInfo.symbol} on ${net.name}...`);
-  if (net.hasDeadline) {
+  if (hasDeadline) {
     console.log(`Deadline: ${new Date(deadline * 1000).toISOString()} (5 min)`);
   }
 

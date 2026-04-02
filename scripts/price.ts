@@ -1,16 +1,7 @@
 import { ethers } from "ethers";
+import { getNetwork } from "../config/loadConfig.js";
 
-// ── Network config ─────────────────────────────────────────────────────────
-
-const NETWORKS = {
-  one: { rpc: "https://arb1.arbitrum.io/rpc", factory: "0x1F98431c8aD98523631AE4a59f267346ea31F984", quoter: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e" },
-  sepolia: { rpc: "https://sepolia-rollup.arbitrum.io/rpc", factory: "0x1F98431c8aD98523631AE4a59f267346ea31F984", quoter: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e" },
-} as const;
-
-const NETWORK_LABELS: Record<string, string> = {
-  one: "Arbitrum One",
-  sepolia: "Arbitrum Sepolia",
-};
+// ── Config ────────────────────────────────────────────────────────────────
 
 const FEE_TIERS = [500, 3000, 10000] as const;
 
@@ -34,7 +25,7 @@ interface PriceArgs {
   tokenOut: string;
   fee: number | null;
   amount: string;
-  network: keyof typeof NETWORKS;
+  network: string;
 }
 
 function parseArgs(): PriceArgs {
@@ -43,7 +34,7 @@ function parseArgs(): PriceArgs {
   let tokenOut = "";
   let fee: number | null = null;
   let amount = "1";
-  let network: keyof typeof NETWORKS = "one";
+  let network = "one";
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -56,12 +47,7 @@ function parseArgs(): PriceArgs {
     } else if (arg === "--amount" && args[i + 1]) {
       amount = args[++i]!;
     } else if (arg === "--network" && args[i + 1]) {
-      const val = args[++i]!;
-      if (val !== "one" && val !== "sepolia") {
-        console.error(`Invalid network: ${val}. Use "one" or "sepolia".`);
-        process.exit(1);
-      }
-      network = val;
+      network = args[++i]!;
     }
   }
 
@@ -116,7 +102,7 @@ function formatFee(fee: number): string {
 
 async function main(): Promise<void> {
   const { tokenIn, tokenOut, fee: feeArg, amount, network } = parseArgs();
-  const net = NETWORKS[network];
+  const net = getNetwork(network);
   const provider = new ethers.JsonRpcProvider(net.rpc);
 
   // Fetch token info
@@ -157,8 +143,7 @@ async function main(): Promise<void> {
   const basePrice = parseFloat(ethers.formatUnits(baseAmountOut, tokenOutInfo.decimals));
 
   // Output header
-  const networkLabel = NETWORK_LABELS[network] ?? network;
-  console.log(`${tokenInInfo.symbol}/${tokenOutInfo.symbol} on ${networkLabel}`);
+  console.log(`${tokenInInfo.symbol}/${tokenOutInfo.symbol} on ${net.name}`);
   console.log(`  Pool: ${poolAddress}`);
   console.log(`  Fee tier: ${formatFee(fee)}`);
   console.log(`  Price: 1 ${tokenInInfo.symbol} = ${basePrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 })} ${tokenOutInfo.symbol}`);
