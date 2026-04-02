@@ -76,6 +76,11 @@ function parseArgs(): SwapArgs {
 async function main(): Promise<void> {
   const { amount, tokenIn, tokenOut, slippage, dryRun } = parseArgs();
 
+  if (isNaN(Number(amount)) || Number(amount) <= 0) {
+    console.error(`Invalid amount: ${amount}. Must be a positive number.`);
+    process.exit(1);
+  }
+
   const tokenInInfo = TOKENS[tokenIn];
   const tokenOutInfo = TOKENS[tokenOut];
   if (!tokenInInfo || !tokenOutInfo) {
@@ -128,7 +133,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Execute swap
+  // Signing required — validate private key
   if (!PRIVATE_KEY) {
     console.error("PRIVATE_KEY not set. Add it to .env or export it as an environment variable.");
     process.exit(1);

@@ -65,16 +65,16 @@ npx tsx scripts/swap.ts --amount 0.01 --dry-run
 npx tsx scripts/swap.ts --amount 0.001 --tokenIn WETH --tokenOut USDC --slippage 2
 ```
 
-### 4. Register agent identity
+### 4. Register agent identity (ERC-8004)
 
 ```bash
-# Register with default name/metadata
+# Register with default agent profile
 npx tsx scripts/register.ts
 
-# Custom name and metadata
-npx tsx scripts/register.ts --name "My Agent" --metadata "Custom metadata"
+# Custom name and description
+npx tsx scripts/register.ts --name "My Agent" --description "An AI agent on Arbitrum"
 
-# Check if already registered
+# Check if wallet is registered (no private key needed)
 npx tsx scripts/register.ts --check
 ```
 

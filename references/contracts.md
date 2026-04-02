@@ -86,12 +86,13 @@
 ]
 ```
 
-### Identity Registry (speculative)
+### Identity Registry (ERC-8004 via agent0-sdk)
 
-```json
-[
-  "function register(string name, string metadata)",
-  "function registerAgent(string name, string metadata)",
-  "function isRegistered(address agent) view returns (bool)"
-]
-```
+Uses `IDENTITY_REGISTRY_ABI` from `agent0-sdk`. Key functions:
+
+- `register()` → mint with no URI
+- `register(string agentURI)` → mint with ERC-8004 data URI
+- `register(string agentURI, MetadataEntry[] metadata)` → mint with URI + metadata
+- `ownerOf(uint256 tokenId)` → check token owner (ERC-721)
+- `tokenURI(uint256 tokenId)` → get agent URI
+- `getAgentWallet(uint256 agentId)` → get wallet for agent ID

@@ -56,6 +56,17 @@ function parseArgs(): {
 
 async function main(): Promise<void> {
   const { address, token, network } = parseArgs();
+
+  if (!ethers.isAddress(address)) {
+    console.error(`Invalid address: ${address}`);
+    process.exit(1);
+  }
+
+  if (token && !ethers.isAddress(token)) {
+    console.error(`Invalid token address: ${token}`);
+    process.exit(1);
+  }
+
   const net = NETWORKS[network];
   const provider = new ethers.JsonRpcProvider(net.rpc);
 

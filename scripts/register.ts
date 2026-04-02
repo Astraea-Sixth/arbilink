@@ -1,5 +1,9 @@
 import "dotenv/config";
 import { ethers } from "ethers";
+import {
+  IDENTITY_REGISTRY_ABI,
+  encodeErc8004JsonDataUri,
+} from "agent0-sdk";
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -7,148 +11,161 @@ const RPC_URL = "https://sepolia-rollup.arbitrum.io/rpc";
 const PRIVATE_KEY = process.env.PRIVATE_KEY || "";
 const REGISTRY_ADDRESS = "0x8004A818BFB912233c491871b3d84c89A494BD9e";
 
-const REGISTER_ABI = [
-  "function register(string name, string metadata)",
-];
-
-const REGISTER_AGENT_ABI = [
-  "function registerAgent(string name, string metadata)",
-];
-
-const CHECK_ABI = [
-  "function isRegistered(address agent) view returns (bool)",
-];
+const DEFAULT_WALLET = "0xa6b18B26717bBd10A3Ae828052C8CA35Ef5EcB8b";
 
 // ── Arg parsing ─────────────────────────────────────────────────────────────
 
 interface RegisterArgs {
   name: string;
-  metadata: string;
+  description: string;
   check: boolean;
 }
 
 function parseArgs(): RegisterArgs {
   const args = process.argv.slice(2);
-  let name = "ArbiLink Agent";
-  let metadata = "OpenClaw Arbitrum Skill";
+  let name = "Astraea";
+  let description =
+    "OpenClaw AI agent — orchestrator of the Arbitrum agent skill";
   let check = false;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--name" && args[i + 1]) {
       name = args[++i]!;
-    } else if (arg === "--metadata" && args[i + 1]) {
-      metadata = args[++i]!;
+    } else if (arg === "--description" && args[i + 1]) {
+      description = args[++i]!;
     } else if (arg === "--check") {
       check = true;
     }
   }
 
-  return { name, metadata, check };
+  return { name, description, check };
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  const { name, metadata, check } = parseArgs();
-  if (!PRIVATE_KEY) {
-    console.error("PRIVATE_KEY not set. Add it to .env or export it as an environment variable.");
-    process.exit(1);
-  }
+  const { name, description, check } = parseArgs();
   const provider = new ethers.JsonRpcProvider(RPC_URL);
-  const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
 
-  // Check registration status
+  // Check registration status (read-only — no private key needed)
+  // The registry is ERC-721 based. We use ownerOf(tokenId) to probe,
+  // or try to detect if the wallet owns any agent token.
   if (check) {
-    console.log(`Checking registration for ${wallet.address} on Arbitrum Sepolia...`);
-    const contract = new ethers.Contract(REGISTRY_ADDRESS, CHECK_ABI, provider);
-    try {
-      const registered: boolean = await contract.isRegistered(wallet.address);
-      console.log(`Address: ${wallet.address}`);
-      console.log(`Registered: ${registered}`);
-    } catch (err: unknown) {
-      console.error(
-        "Could not check registration — isRegistered(address) may not exist on this contract."
-      );
-      console.error(
-        "Error:",
-        err instanceof Error ? err.message : err
-      );
+    const address = PRIVATE_KEY
+      ? new ethers.Wallet(PRIVATE_KEY).address
+      : DEFAULT_WALLET;
+    console.log(
+      `Checking registration for ${address} on Arbitrum Sepolia...`
+    );
+    const contract = new ethers.Contract(
+      REGISTRY_ADDRESS,
+      IDENTITY_REGISTRY_ABI,
+      provider
+    );
 
-      // Try to get contract code to see if it's deployed
-      const code = await provider.getCode(REGISTRY_ADDRESS);
-      if (code === "0x") {
-        console.error(`No contract deployed at ${REGISTRY_ADDRESS}`);
-      } else {
-        console.log(
-          `Contract exists at ${REGISTRY_ADDRESS} (${code.length / 2 - 1} bytes) but ABI may not match.`
-        );
+    // Probe low token IDs to see if this wallet owns one
+    let found = false;
+    for (let tokenId = 1; tokenId <= 20; tokenId++) {
+      try {
+        const owner: string = await contract.ownerOf(tokenId);
+        if (owner.toLowerCase() === address.toLowerCase()) {
+          console.log(`Address: ${address}`);
+          console.log(`Registered: true (token #${tokenId})`);
+          try {
+            const uri: string = await contract.tokenURI(tokenId);
+            console.log(`Agent URI: ${uri}`);
+          } catch {
+            // tokenURI may not be set
+          }
+          found = true;
+          break;
+        }
+      } catch {
+        // ownerOf reverts for non-existent tokens — we've passed the last minted ID
+        break;
       }
     }
+
+    if (!found) {
+      console.log(`Address: ${address}`);
+      console.log(`Registered: false`);
+    }
     return;
   }
 
-  // Attempt registration
+  // Signing required from here — validate private key
+  if (!PRIVATE_KEY) {
+    console.error(
+      "PRIVATE_KEY not set. Add it to .env or export it as an environment variable."
+    );
+    process.exit(1);
+  }
+  const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
+  const contract = new ethers.Contract(
+    REGISTRY_ADDRESS,
+    IDENTITY_REGISTRY_ABI,
+    wallet
+  );
+
+  // Build ERC-8004 agent URI
+  const agentURI = encodeErc8004JsonDataUri({
+    name,
+    description,
+    version: "1.0.0",
+  });
+
   console.log(`Registering agent on Arbitrum Sepolia...`);
+  console.log(`Wallet: ${wallet.address}`);
   console.log(`Name: ${name}`);
-  console.log(`Metadata: ${metadata}`);
+  console.log(`Description: ${description}`);
+  console.log(`Agent URI: ${agentURI}`);
   console.log(`Registry: ${REGISTRY_ADDRESS}`);
 
-  // Try register(string, string) first
   try {
-    const contract = new ethers.Contract(REGISTRY_ADDRESS, REGISTER_ABI, wallet);
-    const tx = await contract.register(name, metadata);
+    // Use register(string agentURI) overload
+    const tx = await contract["register(string)"](agentURI);
     console.log(`\nTx submitted: ${tx.hash}`);
     const receipt = await tx.wait();
     console.log(`\n--- Registration Complete ---`);
     console.log(`Tx hash: ${receipt.hash}`);
     console.log(`Gas used: ${receipt.gasUsed.toString()}`);
     console.log(`Block: ${receipt.blockNumber}`);
-    return;
-  } catch (err: unknown) {
-    console.warn(
-      "register(string, string) failed — trying registerAgent(string, string)..."
-    );
-    if (err instanceof Error) {
-      console.warn(`Reason: ${err.message.slice(0, 200)}`);
+
+    // Try to extract agentId from receipt logs
+    for (const log of receipt.logs) {
+      try {
+        const parsed = contract.interface.parseLog({
+          topics: [...log.topics],
+          data: log.data,
+        });
+        if (parsed && parsed.name === "Transfer") {
+          console.log(`Agent ID (token): ${parsed.args[2].toString()}`);
+        }
+      } catch {
+        // Not a matching log
+      }
     }
-  }
-
-  // Fallback: try registerAgent(string, string)
-  try {
-    const contract = new ethers.Contract(REGISTRY_ADDRESS, REGISTER_AGENT_ABI, wallet);
-    const tx = await contract.registerAgent(name, metadata);
-    console.log(`\nTx submitted: ${tx.hash}`);
-    const receipt = await tx.wait();
-    console.log(`\n--- Registration Complete ---`);
-    console.log(`Tx hash: ${receipt.hash}`);
-    console.log(`Gas used: ${receipt.gasUsed.toString()}`);
-    console.log(`Block: ${receipt.blockNumber}`);
-    return;
   } catch (err: unknown) {
-    console.error("\nBoth register methods failed.");
     if (err instanceof Error) {
-      console.error(`Last error: ${err.message.slice(0, 300)}`);
+      console.error(`\nRegistration failed: ${err.message.slice(0, 300)}`);
+      if (
+        err.message.includes("AlreadyRegistered") ||
+        err.message.includes("already registered")
+      ) {
+        console.error(
+          "Hint: This wallet is already registered. Use --check to see details."
+        );
+      } else if (err.message.includes("insufficient funds")) {
+        console.error(
+          "Hint: Make sure you have ETH on Arbitrum Sepolia for gas."
+        );
+      }
+    } else {
+      console.error("Registration failed:", err);
     }
+    process.exit(1);
   }
-
-  // Check if contract exists at all
-  const code = await provider.getCode(REGISTRY_ADDRESS);
-  if (code === "0x") {
-    console.error(`\nNo contract deployed at ${REGISTRY_ADDRESS}.`);
-  } else {
-    console.error(
-      `\nContract exists at ${REGISTRY_ADDRESS} (${code.length / 2 - 1} bytes).`
-    );
-    console.error(
-      "The ABI does not match — inspect the contract on Arbiscan to find the correct function signatures."
-    );
-    console.error(
-      `Explorer: https://sepolia.arbiscan.io/address/${REGISTRY_ADDRESS}`
-    );
-  }
-
-  process.exit(1);
 }
 
 main().catch((err: unknown) => {

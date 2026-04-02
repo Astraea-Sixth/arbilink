@@ -52,12 +52,12 @@ npx tsx scripts/swap.ts --amount 0.01 --dry-run       # Estimate only
 npx tsx scripts/swap.ts --amount 0.001 --slippage 2   # 2% slippage tolerance
 ```
 
-### Register agent
+### Register agent (ERC-8004)
 
 ```bash
-npx tsx scripts/register.ts                                  # Default registration
-npx tsx scripts/register.ts --name "My Agent" --metadata "v1"  # Custom
-npx tsx scripts/register.ts --check                          # Check status
+npx tsx scripts/register.ts                                              # Default profile
+npx tsx scripts/register.ts --name "My Agent" --description "AI agent"   # Custom
+npx tsx scripts/register.ts --check                                      # Check status (no key needed)
 ```
 
 ## Architecture
